@@ -1,7 +1,14 @@
 clear all;
 close all;
 
-[audio, fs] = audioread('Audio_files/clean_speech.wav');
+[speech, fs] = audioread('Audio_files/clean_speech.wav');
+[noise, ~] = audioread('Audio_files/babble_noise.wav');
+soundsc(speech, fs);
+pause(length(speech) / fs);
+
+audio = speech + noise(1:length(speech));
+soundsc(audio, fs);
+
 window_length_sec = 20e-3; %20ms
 window_length = window_length_sec * fs;
 
