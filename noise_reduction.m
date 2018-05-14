@@ -2,7 +2,7 @@ clear all;
 close all;
 
 [audio, fs] = audioread('Audio_files/clean_speech.wav');
-window_length_sec = 20e-3; %10ms
+window_length_sec = 20e-3; %20ms
 window_length = window_length_sec * fs;
 
 window = hamming(window_length);
@@ -21,6 +21,16 @@ end
 
 % Transform to frequency domain
 transformed_audio = fft(windowed_audio, window_length, 2);
+
+% Periodogram PSD estimate
+psd_est = (abs(transformed_audio) .^ 2) ./ window_length;
+
+noise_psd_est = zeros(size(psd_est, 1), size(psd_est, 2));
+for i = 2:size(psd_est, 1)
+    noise_psd_est(i, :) = min(psd_est(i - 1, :));
+end
+% Do noise reduction
+
 
 % Transform to time domain
 recovered_windowed_audio = real(ifft(transformed_audio, window_length, 2));
