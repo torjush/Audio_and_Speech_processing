@@ -7,15 +7,17 @@ alpha_s = .3; % Speech PSD smoothing parameter
 alpha_n = .3; % Noise PSD smoothing parameter
 
 ms_window_length = 5;  % How many windows to use in noise PSD estimation
+noise_bias = 0;      % bias value in noise PSD
+noise_level = 1.;
 
 % Read in data
 [speech, fs] = audioread('Audio_files/clean_speech.wav');
-[noise, ~] = audioread('Audio_files/babble_noise.wav');
+[noise, ~] = audioread('Audio_files/speech_shaped_noise.wav');
 
 fprintf('Now playing noisy audio\n');
-audio = speech + .3 .* noise(1:length(speech));
-% soundsc(audio, fs);
-% pause(floor(length(audio) / fs));
+audio = speech + noise_level .* noise(1:length(speech));
+soundsc(audio, fs);
+pause(floor(length(audio) / fs));
 
 %% Windowing
 % Windowing setup
@@ -52,25 +54,22 @@ for i = 1:size(smoothed_psd, 1)
     if i <= ms_window_length
         noise_psd_est(i,:) = min(smoothed_psd(1:i, :), [], 1);
     else
-        noise_psd_est(i,:) = min(smoothed_psd(i-ms_window_length:i, :), [], 1);
+        noise_psd_est(i,:) = min(smoothed_psd(i-ms_window_length:i, :),...
+            [], 1);
     end%if
 end%for
-imagesc(noise_psd_est);
+noise_psd_est = noise_psd_est + noise_bias;
 
 % Estimate speech PSD, decision directed
 speech_psd_est = zeros(size(psd_est, 1), size(psd_est, 2));
-
-for i = 2:size(psd_est, 1)
-    speech_psd_est(i, :) = ...
-        alpha_s .* (speech_psd_est(i - 1, :) ./ noise_psd_est(i, :)) +...
-        (1-alpha_s) .* (max(psd_est(i, :) ./ max(noise_psd_est(i, :) - 1, .01)));
-    if sum(isinf(speech_psd_est(i, :))) > 0
-        fprintf('Window number %d contains Inf\n', i);
-    end%if
-end%for
+speech_snr_est = filter(1-alpha_s, [1 -alpha_n],...
+    psd_est ./ noise_psd_est, [], 1);
+if sum(sum(isinf(speech_psd_est))) > 0
+        fprintf('Speech snr estimate contains Inf\n', i);
+end%if
 
 % Wiener filter
-filtered_audio = (speech_psd_est ./ max(speech_psd_est + noise_psd_est, .01))...
+filtered_audio = (speech_snr_est ./ (speech_snr_est + 1))...
     .* transformed_audio;
 
 %% Recovering
@@ -89,14 +88,14 @@ for i = 1:num_windows
 end
 
 % fprintf('Playing recovered audio\n');
-% soundsc(recovered_audio, fs);
+soundsc(recovered_audio, fs);
 error = sum((audio(1:recovered_length) - recovered_audio).^2);
 fprintf('Sum of squared errors: %.4f\n', error);
 % Plot to compare visually
 figure();
 subplot(2,1,1);
-plot(audio);
-title('Original audio signal');
+plot(speech);
+title('Original speech signal');
 subplot(2,1,2);
 plot(recovered_audio);
 title('Reconstructed audio signal');
