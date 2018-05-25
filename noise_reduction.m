@@ -60,10 +60,10 @@ for i = 1:size(smoothed_psd, 1)
 end%for
 noise_psd_est = noise_psd_est + noise_bias;
 
-% Estimate speech PSD, decision directed
-speech_psd_est = zeros(size(psd_est, 1), size(psd_est, 2));
+% Estimate speech SNR, decision directed
 speech_snr_est = filter(1-alpha_s, [1 -alpha_n],...
     psd_est ./ noise_psd_est, [], 1);
+
 if sum(sum(isinf(speech_psd_est))) > 0
         fprintf('Speech snr estimate contains Inf\n', i);
 end%if
