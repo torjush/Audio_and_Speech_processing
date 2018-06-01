@@ -2,31 +2,30 @@ clear all;
 close all;
 
 %% Setup
-% Declare parameters
-alpha_s = .3; % Speech PSD smoothing parameter
-alpha_n = .3; % Noise PSD smoothing parameter
-
-ms_window_length = 5;  % How many windows to use in noise PSD estimation
-noise_bias = 0;      % bias value in noise PSD
-noise_level = 1.;
-
+noise_level = 1;
 % Read in data
 [speech, fs] = audioread('Audio_files/clean_speech.wav');
-[noise, ~] = audioread('Audio_files/speech_shaped_noise.wav');
+[noise, ~] = audioread('Audio_files/Speech_shaped_noise.wav');
+
+speech = speech(1:115531);
+audio = speech + noise_level .* noise(1:length(speech));
 
 fprintf('Now playing noisy audio\n');
-audio = speech + noise_level .* noise(1:length(speech));
 soundsc(audio, fs);
-pause(floor(length(audio) / fs));
-
-%% Windowing
-% Windowing setup
-window_length_sec = 20e-3; %20ms
+pause(floor(length(audio) / fs) + 1);
+% Declare parameters
+window_length_sec = 15e-3; %15ms
 window_length = window_length_sec * fs;
 
 window = hamming(window_length);
 num_windows = 2*floor(length(audio) / window_length) - 1;
 
+alpha_s = .6; % Speech PSD smoothing parameter
+
+ms_window_length = 96;  % How many windows to use in noise PSD estimation
+noise_bias = 4e-5;      % bias value in noise PSD
+
+%% Windowing
 % Generate matrix of windows
 windowed_audio = zeros(num_windows, window_length);
 step_size = floor(window_length / 2);
@@ -46,26 +45,38 @@ transformed_audio = fft(windowed_audio, window_length, 2);
 % Periodogram PSD estimate
 psd_est = (abs(transformed_audio) .^ 2) ./ window_length;
 
-% Smoothen the PSD estimate with exp moving avg to do minimum statistics
-smoothed_psd = filter(1-alpha_n, [1 -alpha_n], psd_est, [], 1);
+smoothed_psd = zeros(size(psd_est, 1), size(psd_est, 2));
+smoothed_psd(1, :) = psd_est(1,:);
+noise_psd_est(1, :) = psd_est(1,:);
 
-% Minimum statistics noise_psd_estimate
-for i = 1:size(smoothed_psd, 1)
+alpha_n = ones(1,size(smoothed_psd, 2)) .* 0.5;
+for i = 2:size(psd_est, 1)
+    % Smooth the PSD estimate
+    smoothed_psd(i, :) = alpha_n .* smoothed_psd(i-1, :) + ...
+        (1 - alpha_n) .* psd_est(i, :);
+
+    % Find minimum from last few frames
     if i <= ms_window_length
         noise_psd_est(i,:) = min(smoothed_psd(1:i, :), [], 1);
     else
         noise_psd_est(i,:) = min(smoothed_psd(i-ms_window_length:i, :),...
             [], 1);
     end%if
+    
+    % Update smoothing parameter
+    alpha_n = 1 ./...
+        (1 + (smoothed_psd(i, :) ./ noise_psd_est(i, :) - 1).^2);
+    % Clip it between .96 and .3
+    alpha_n(alpha_n > .96) = .96;
+    alpha_n(alpha_n < .3) = .3;
 end%for
-noise_psd_est = noise_psd_est + noise_bias;
 
 % Estimate speech SNR, decision directed
-speech_snr_est = filter(1-alpha_s, [1 -alpha_n],...
-    psd_est ./ noise_psd_est, [], 1);
+speech_snr_est = filter(1-alpha_s, [1 -alpha_s],...
+    (smoothed_psd ./ noise_psd_est - 1), [], 1);
 
-if sum(sum(isinf(speech_psd_est))) > 0
-        fprintf('Speech snr estimate contains Inf\n', i);
+if sum(sum(isinf(speech_snr_est))) > 0
+    fprintf('Speech snr estimate contains Inf\n');
 end%if
 
 % Wiener filter
@@ -89,13 +100,13 @@ end
 
 % fprintf('Playing recovered audio\n');
 soundsc(recovered_audio, fs);
-error = sum((audio(1:recovered_length) - recovered_audio).^2);
+error = sum((speech(1:recovered_length) - recovered_audio).^2);
 fprintf('Sum of squared errors: %.4f\n', error);
 % Plot to compare visually
 figure();
 subplot(2,1,1);
-plot(speech);
-title('Original speech signal');
+plot(audio);
+title('Original noisy signal');
 subplot(2,1,2);
 plot(recovered_audio);
 title('Reconstructed audio signal');
