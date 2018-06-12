@@ -2,10 +2,10 @@ clear all;
 close all;
 
 %% Setup
-noise_level = 1;
+noise_level = 10;
 % Read in data
 [speech, fs] = audioread('Audio_files/clean_speech.wav');
-[noise, ~] = audioread('Audio_files/Speech_shaped_noise.wav');
+[noise, ~] = audioread('Audio_files/aritificial_nonstat_noise.wav');
 
 speech = speech(1:115531);
 audio = speech + noise_level .* noise(1:length(speech));
@@ -21,6 +21,8 @@ window = hamming(window_length);
 num_windows = 2*floor(length(audio) / window_length) - 1;
 
 alpha_s = .6; % Speech PSD smoothing parameter
+alpha_n_max = .96;
+alpha_n_min = .3;
 
 ms_window_length = 96;  % How many windows to use in noise PSD estimation
 noise_bias = 4e-5;      % bias value in noise PSD
@@ -50,7 +52,18 @@ smoothed_psd(1, :) = psd_est(1,:);
 noise_psd_est(1, :) = psd_est(1,:);
 
 alpha_n = ones(1,size(smoothed_psd, 2)) .* 0.5;
+alpha_c = .3;
 for i = 2:size(psd_est, 1)
+    % Update smoothing parameters
+    alpha_c_tilde = 1 /...
+        (1 + (sum(smoothed_psd(i - 1,:)) / sum(psd_est(i,:)) - 1)^2);
+    alpha_c = 0.7 * alpha_c + 0.3 * max(alpha_c_tilde, 0.7);
+    
+    alpha_n = (alpha_n_max * alpha_c) ./ ...
+        (1 + (smoothed_psd(i - 1, :) ./ noise_psd_est(i - 1, :) - 1).^2);
+
+    alpha_n(alpha_n > .96) = .96;
+    alpha_n(alpha_n < .3) = .3;
     % Smooth the PSD estimate
     smoothed_psd(i, :) = alpha_n .* smoothed_psd(i-1, :) + ...
         (1 - alpha_n) .* psd_est(i, :);
@@ -63,12 +76,7 @@ for i = 2:size(psd_est, 1)
             [], 1);
     end%if
     
-    % Update smoothing parameter
-    alpha_n = 1 ./...
-        (1 + (smoothed_psd(i, :) ./ noise_psd_est(i, :) - 1).^2);
-    % Clip it between .96 and .3
-    alpha_n(alpha_n > .96) = .96;
-    alpha_n(alpha_n < .3) = .3;
+    
 end%for
 
 % Estimate speech SNR, decision directed
