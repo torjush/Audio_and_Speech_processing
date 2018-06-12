@@ -2,7 +2,7 @@ clear all;
 close all;
 
 %% Setup
-noise_level = 10;
+noise_level = 30;
 % Read in data
 [speech, fs] = audioread('Audio_files/clean_speech.wav');
 [noise, ~] = audioread('Audio_files/aritificial_nonstat_noise.wav');
@@ -23,8 +23,12 @@ num_windows = 2*floor(length(audio) / window_length) - 1;
 alpha_s = .6; % Speech PSD smoothing parameter
 alpha_n_max = .96;
 alpha_n_min = .3;
+M = .865;               % From paper
+a_v = 2.12;             % From paper
 
-ms_window_length = 96;  % How many windows to use in noise PSD estimation
+ms_window_length = 80;  % How many windows to use in noise PSD estimation
+V = 10;
+U = ms_window_length / V;
 noise_bias = 4e-5;      % bias value in noise PSD
 
 %% Windowing
@@ -51,31 +55,57 @@ smoothed_psd = zeros(size(psd_est, 1), size(psd_est, 2));
 smoothed_psd(1, :) = psd_est(1,:);
 noise_psd_est(1, :) = psd_est(1,:);
 
-alpha_n = ones(1,size(smoothed_psd, 2)) .* 0.5;
+% Initial alphas
 alpha_c = .3;
+alpha_n = ones(1,size(smoothed_psd, 2)) .* .96 * alpha_c;
+
+% Parameters for bias estimation
+beta = (alpha_n .^2 < .8) .* alpha_n .^2 + (alpha_n .^2 >= .8) .* .8;
+psd_bar = (1 - beta) .* smoothed_psd(1, :);
+psd_bar_sq = (1 - beta) .* smoothed_psd(1, :).^2;
+psd_var_est = psd_bar_sq - psd_bar.^2;
 for i = 2:size(psd_est, 1)
     % Update smoothing parameters
     alpha_c_tilde = 1 /...
-        (1 + (sum(smoothed_psd(i - 1,:)) / sum(psd_est(i,:)) - 1)^2);
+        (1 + (sum(smoothed_psd(i - 1,:)) / sum(psd_est(i,:).^2) - 1))^2;
     alpha_c = 0.7 * alpha_c + 0.3 * max(alpha_c_tilde, 0.7);
     
     alpha_n = (alpha_n_max * alpha_c) ./ ...
         (1 + (smoothed_psd(i - 1, :) ./ noise_psd_est(i - 1, :) - 1).^2);
 
+    % Clip alpha
     alpha_n(alpha_n > .96) = .96;
     alpha_n(alpha_n < .3) = .3;
     % Smooth the PSD estimate
     smoothed_psd(i, :) = alpha_n .* smoothed_psd(i-1, :) + ...
         (1 - alpha_n) .* psd_est(i, :);
 
+    % Estimate bias
+    beta = (alpha_n .^2 < .8) .* alpha_n .^2 + (alpha_n .^2 >= .8) .* .8;
+    psd_bar = beta .* psd_bar +...
+        (1 - beta) .* smoothed_psd(i-1, :);
+    psd_bar_sq = beta .* psd_bar_sq +...
+        (1 - beta) .* smoothed_psd(i-1, :).^2;
+    psd_var_est = psd_bar_sq - psd_bar.^2;
+    
+    Q_eq = (2 .* noise_psd_est(i-1, :) .^ 4) ./ psd_var_est;
+    % Clip Q_eq
+    Q_eq(Q_eq > 2) = 2;
+    Q_tilde_eq = (Q_eq - 2*M) ./ (1 - M);
+    noise_bias = 1 + (ms_window_length - 1) * 2 ./ Q_tilde_eq;
+    % bias_correction = 1 + (a_v / i) *...
+    %     sqrt(sum(1 ./ Q_eq));
+    bias_correction = 1;
+    noise_bias = noise_bias .* bias_correction;
+    
     % Find minimum from last few frames
     if i <= ms_window_length
-        noise_psd_est(i,:) = min(smoothed_psd(1:i, :), [], 1);
+        noise_psd_est(i,:) = min(smoothed_psd(1:i, :), [], 1)...
+            .* noise_bias;
     else
         noise_psd_est(i,:) = min(smoothed_psd(i-ms_window_length:i, :),...
-            [], 1);
+            [], 1) .* noise_bias;
     end%if
-    
     
 end%for
 
