@@ -2,10 +2,10 @@ clear all;
 close all;
 
 %% Setup
-noise_level = 30;
+noise_level = .1;
 % Read in data
 [speech, fs] = audioread('Audio_files/clean_speech.wav');
-[noise, ~] = audioread('Audio_files/aritificial_nonstat_noise.wav');
+[noise, ~] = audioread('Audio_files/Speech_shaped_noise.wav');
 
 speech = speech(1:115531);
 audio = speech + noise_level .* noise(1:length(speech));
@@ -23,10 +23,10 @@ num_windows = 2*floor(length(audio) / window_length) - 1;
 alpha_s = .3; % Speech PSD smoothing parameter
 alpha_n_max = .96;
 alpha_n_min = .3;
-M = .89;               % From paper
+M = .865;               % From paper
 a_v = 2.12;             % From paper
 
-ms_window_length = 120;  % How many windows to use in noise PSD estimation
+ms_window_length = 80;  % How many windows to use in noise PSD estimation
 V = 10;
 U = ms_window_length / V;
 noise_bias = 4e-5;      % bias value in noise PSD
@@ -53,10 +53,10 @@ psd_est = (abs(transformed_audio) .^ 2) ./ window_length;
 
 smoothed_psd = zeros(size(psd_est, 1), size(psd_est, 2));
 smoothed_psd(1, :) = psd_est(1,:);
-noise_psd_est(1, :) = psd_est(1,:);
+noise_psd_est = psd_est(1,:);
 
 speech_snr_est = zeros(size(psd_est, 1), size(psd_est, 2));
-speech_psd_est = zeros(size(psd_est, 1), size(psd_est, 2));
+speech_psd_est = zeros(1, size(psd_est, 2));
 
 % Initial alphas
 alpha_c = .3;
@@ -74,7 +74,7 @@ for i = 2:size(psd_est, 1)
     alpha_c = 0.7 * alpha_c + 0.3 * max(alpha_c_tilde, 0.7);
     
     alpha_n = (alpha_n_max * alpha_c) ./ ...
-        (1 + (smoothed_psd(i - 1, :) ./ noise_psd_est(i - 1, :) - 1).^2);
+        (1 + (smoothed_psd(i - 1, :) ./ noise_psd_est - 1).^2);
 
     % Clip alpha
     alpha_n(alpha_n > .96) = .96;
@@ -91,7 +91,7 @@ for i = 2:size(psd_est, 1)
         (1 - beta) .* smoothed_psd(i, :).^2;
     psd_var_est = psd_bar_sq - psd_bar.^2;
     
-    Q_eq = (2 .* noise_psd_est(i-1, :) .^ 2) ./ psd_var_est;
+    Q_eq = (2 .* noise_psd_est .^ 2) ./ psd_var_est;
     % Clip Q_eq
     Q_eq(Q_eq > 2) = 2;
     Q_tilde_eq = (Q_eq - 2*M) ./ (1 - M);
@@ -103,21 +103,17 @@ for i = 2:size(psd_est, 1)
     
     % Find minimum from last few frames
     if i <= ms_window_length
-        noise_psd_est(i,:) = min(smoothed_psd(1:i, :), [], 1)...
+        noise_psd_est = min(smoothed_psd(1:i, :), [], 1)...
             .* noise_bias;
     else
-        noise_psd_est(i,:) = min(smoothed_psd(i-ms_window_length:i, :),...
+        noise_psd_est = min(smoothed_psd(i-ms_window_length:i, :),...
             [], 1) .* noise_bias;
     end%if
     speech_snr_est(i, :) =...
-        alpha_s .* (speech_psd_est(i - 1, :) ./ noise_psd_est(i, :)) +...
-        (1 - alpha_s) .* (smoothed_psd(i, :) ./ noise_psd_est(i, :));
-    speech_psd_est(i, :) = speech_snr_est(i, :) .* noise_psd_est(i, :);
+        alpha_s .* (speech_psd_est ./ noise_psd_est) +...
+        (1 - alpha_s) .* (smoothed_psd(i, :) ./ noise_psd_est);
+    speech_psd_est = speech_snr_est(i, :) .* noise_psd_est;
 end%for
-
-% Estimate speech SNR, decision directed
-% speech_snr_est = filter(1-alpha_s, [1 -alpha_s],...
-%     (smoothed_psd ./ noise_psd_est - 1), [], 1);
 
 if sum(sum(isinf(speech_snr_est))) > 0
     fprintf('Speech snr estimate contains Inf\n');
