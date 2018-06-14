@@ -2,7 +2,9 @@ clear all;
 close all;
 
 %% Setup
+
 noise_level = .4;
+
 % Read in data
 [speech, fs] = audioread('Audio_files/clean_speech.wav');
 [noise, ~] = audioread('Audio_files/Speech_shaped_noise.wav');
@@ -14,7 +16,7 @@ fprintf('Now playing noisy audio\n');
 soundsc(audio, fs);
 pause(floor(length(audio) / fs) + 1);
 % Declare parameters
-window_length_sec = 20e-3; %15ms
+window_length_sec = 20e-3; %20ms
 window_length = window_length_sec * fs;
 
 window = hamming(window_length);
@@ -34,19 +36,27 @@ windowed_audio = zeros(num_windows, window_length);
 step_size = floor(window_length / 2);
 
 window_index = 1;
+snr_count = 1;
 for i = 1:num_windows
     from = step_size * i - step_size + 1;
     to = step_size * i + step_size;
     windowed_audio(i,:) = window .* audio(from:to);
+    curr_snr = snr(speech(from:to), noise(from:to));
+    if curr_snr ~= -inf
+        snrs(snr_count) = curr_snr;
+        snr_count = snr_count + 1;
+    end
 end
 
+avg_snr = nanmean(snrs);
+fprintf('Audio signal has average SNR of %.2fdB\n', avg_snr);
 %% Processing
 fprintf('Processing windowed audio\n');
 % Transform to frequency domain
 transformed_audio = fft(windowed_audio, window_length, 2);
 
 % Periodogram PSD estimate
-psd_est = (abs(transformed_audio) .^ 2);
+psd_est = abs(transformed_audio) .^ 2;
 
 smoothed_psd = zeros(size(psd_est, 1), size(psd_est, 2));
 smoothed_psd(1, :) = psd_est(1,:);
@@ -64,7 +74,6 @@ beta = (alpha_n .^2 < .8) .* alpha_n .^2 + (alpha_n .^2 >= .8) .* .8;
 psd_bar = (1 - beta) .* smoothed_psd(1, :);
 psd_bar_sq = (1 - beta) .* smoothed_psd(1, :).^2;
 psd_var_est = psd_bar_sq - psd_bar.^2;
-zerocounter = 0;
 
 for i = 2:size(psd_est, 1)
     % Update smoothing parameters
@@ -110,17 +119,10 @@ for i = 2:size(psd_est, 1)
     end%if
     speech_snr_est(i, :) =...
         alpha_s .* (speech_psd_est ./ noise_psd_est) +...
-        (1 - alpha_s) .* max(psd_est(i, :) ./ noise_psd_est -1,0);
-    
-    if max(max(smoothed_psd(i, :) ./ noise_psd_est -1,0)) == 0
-        zerocounter = zerocounter + 1;
-    end
-    
+        (1 - alpha_s) .* max([psd_est(i, :) ./ noise_psd_est - 1, 0]);
+
     speech_psd_est = speech_snr_est(i, :) .* noise_psd_est;
 end%for
-
-size(psd_est, 1)
-zerocounter
 
 if sum(sum(isinf(speech_snr_est))) > 0
     fprintf('Speech snr estimate contains Inf\n');
@@ -149,6 +151,12 @@ end
 soundsc(recovered_audio, fs);
 error = sum((speech(1:recovered_length) - recovered_audio).^2);
 fprintf('Sum of squared errors: %.4f\n', error);
+
+orig = stoi(speech, audio, fs);
+fprintf('STOI score unprocessed: %.4f\n', orig);
+
+intelligibility = stoi(speech(1:recovered_length), recovered_audio, fs);
+fprintf('STOI score   processed: %.4f\n', intelligibility);
 % Plot to compare visually
 t_speech = ((1:length(speech)) - 1) * 1/fs;
 t_audio = ((1:length(audio)) - 1) * 1/fs;
