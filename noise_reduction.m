@@ -14,7 +14,7 @@ fprintf('Now playing noisy audio\n');
 soundsc(audio, fs);
 pause(floor(length(audio) / fs) + 1);
 % Declare parameters
-window_length_sec = 30e-3; %20ms
+window_length_sec = 20e-3; %20ms
 window_length = window_length_sec * fs;
 
 window = hamming(window_length);
