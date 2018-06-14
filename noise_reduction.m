@@ -2,15 +2,14 @@ clear all;
 close all;
 
 %% Setup
-
-noise_level = .4;
-
+noise_level = .1;
 % Read in data
 [speech, fs] = audioread('Audio_files/clean_speech.wav');
 [noise, ~] = audioread('Audio_files/Speech_shaped_noise.wav');
 
 speech = speech(1:115531);
-audio = speech + noise_level .* noise(1:length(speech));
+noise = noise_level .* noise(1:length(speech));
+audio = speech + noise;
 
 fprintf('Now playing noisy audio\n');
 soundsc(audio, fs);
@@ -22,7 +21,7 @@ window_length = window_length_sec * fs;
 window = hamming(window_length);
 num_windows = 2*floor(length(audio) / window_length) - 1;
 
-alpha_s = .92; % Speech SNR smoothing parameter
+alpha_s = .94; % Speech PSD smoothing parameter
 alpha_n_max = .96;
 alpha_n_min = .3;
 M = .865;               % From paper
@@ -74,7 +73,6 @@ beta = (alpha_n .^2 < .8) .* alpha_n .^2 + (alpha_n .^2 >= .8) .* .8;
 psd_bar = (1 - beta) .* smoothed_psd(1, :);
 psd_bar_sq = (1 - beta) .* smoothed_psd(1, :).^2;
 psd_var_est = psd_bar_sq - psd_bar.^2;
-
 for i = 2:size(psd_est, 1)
     % Update smoothing parameters
     alpha_c_tilde = 1 /...
@@ -119,8 +117,7 @@ for i = 2:size(psd_est, 1)
     end%if
     speech_snr_est(i, :) =...
         alpha_s .* (speech_psd_est ./ noise_psd_est) +...
-        (1 - alpha_s) .* max([psd_est(i, :) ./ noise_psd_est - 1, 0]);
-
+        (1 - alpha_s) .* max([smoothed_psd(i, :) ./ noise_psd_est - 1, 0]);
     speech_psd_est = speech_snr_est(i, :) .* noise_psd_est;
 end%for
 
@@ -158,26 +155,13 @@ fprintf('STOI score unprocessed: %.4f\n', orig);
 intelligibility = stoi(speech(1:recovered_length), recovered_audio, fs);
 fprintf('STOI score   processed: %.4f\n', intelligibility);
 % Plot to compare visually
-t_speech = ((1:length(speech)) - 1) * 1/fs;
-t_audio = ((1:length(audio)) - 1) * 1/fs;
-t_rec_audio = ((1:length(recovered_audio)) - 1) * 1/fs;
-
 figure();
 subplot(3,1,1);
-plot(t_speech,speech);
+plot(speech);
 title('Original clean signal');
-xlabel('time [sec]');
-ylabel('amplitude');
-ylim([-0.61 0.61])
 subplot(3,1,2);
-plot(t_audio,audio);
+plot(audio);
 title('Original noisy signal');
-xlabel('time [sec]');
-ylabel('amplitude');
-ylim([-0.61 0.61])
 subplot(3,1,3);
-plot(t_rec_audio,recovered_audio);
+plot(recovered_audio);
 title('Reconstructed audio signal');
-xlabel('time [sec]');
-ylabel('amplitude');
-ylim([-0.61 0.61])
