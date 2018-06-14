@@ -14,13 +14,13 @@ fprintf('Now playing noisy audio\n');
 soundsc(audio, fs);
 pause(floor(length(audio) / fs) + 1);
 % Declare parameters
-window_length_sec = 15e-3; %15ms
+window_length_sec = 30e-3; %20ms
 window_length = window_length_sec * fs;
 
 window = hamming(window_length);
 num_windows = 2*floor(length(audio) / window_length) - 1;
 
-alpha_s = .3; % Speech PSD smoothing parameter
+alpha_s = .6; % Speech PSD smoothing parameter
 alpha_n_max = .96;
 alpha_n_min = .3;
 M = .865;               % From paper
@@ -111,7 +111,7 @@ for i = 2:size(psd_est, 1)
     end%if
     speech_snr_est(i, :) =...
         alpha_s .* (speech_psd_est ./ noise_psd_est) +...
-        (1 - alpha_s) .* (smoothed_psd(i, :) ./ noise_psd_est);
+        (1 - alpha_s) .* max([smoothed_psd(i, :) ./ noise_psd_est - 1, 0]);
     speech_psd_est = speech_snr_est(i, :) .* noise_psd_est;
 end%for
 
