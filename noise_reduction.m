@@ -1,6 +1,7 @@
 clear all;
 close all;
-
+set(0,'defaulttextInterpreter','latex');
+set(0,'defaultAxesFontSize', 12);
 %% Setup
 noise_level = 12;
 
@@ -158,14 +159,23 @@ fprintf('STOI score unprocessed: %.4f\n', orig);
 
 intelligibility = stoi(speech(1:recovered_length), recovered_audio, fs);
 fprintf('STOI score   processed: %.4f\n', intelligibility);
+
+t = (1:recovered_length) ./ fs;
 % Plot to compare visually
 figure();
 subplot(3,1,1);
-plot(speech);
+plot(t, speech(1:recovered_length));
+axis([0, 8, -0.5, 0.5]);
 title('Original clean signal');
+xlabel('$t$[s]');
 subplot(3,1,2);
-plot(audio);
+plot(t, audio(1:recovered_length));
+axis([0, 8, -0.5, 0.5]);
 title('Original noisy signal');
+xlabel('$t$[s]');
 subplot(3,1,3);
-plot(recovered_audio);
+plot(t, recovered_audio);
+lim = max(abs(recovered_audio));
+axis([0, 8, -lim, lim]);
+xlabel('$t$[s]');
 title('Reconstructed audio signal');
