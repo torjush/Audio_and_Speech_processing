@@ -2,10 +2,11 @@ clear all;
 close all;
 
 %% Setup
-noise_level = .1;
+noise_level = 12;
+
 % Read in data
 [speech, fs] = audioread('Audio_files/clean_speech.wav');
-[noise, ~] = audioread('Audio_files/Speech_shaped_noise.wav');
+[noise, ~] = audioread('Audio_files/aritificial_nonstat_noise.wav');
 
 speech = speech(1:115531);
 noise = noise_level .* noise(1:length(speech));
@@ -21,13 +22,13 @@ window_length = window_length_sec * fs;
 window = hamming(window_length);
 num_windows = 2*floor(length(audio) / window_length) - 1;
 
-alpha_s = .94; % Speech PSD smoothing parameter
+alpha_s = .95; % Speech PSD smoothing parameter
 alpha_n_max = .96;
 alpha_n_min = .3;
-M = .865;               % From paper
+M = .890;               % From paper
 a_v = 2.12;             % From paper
 
-ms_window_length = 80;  % How many windows to use in noise PSD estimation
+ms_window_length = 120;  % How many windows to use in noise PSD estimation
 
 %% Windowing
 % Generate matrix of windows
@@ -74,6 +75,9 @@ psd_bar = (1 - beta) .* smoothed_psd(1, :);
 psd_bar_sq = (1 - beta) .* smoothed_psd(1, :).^2;
 psd_var_est = psd_bar_sq - psd_bar.^2;
 for i = 2:size(psd_est, 1)
+    if i == 203
+        disp('Hey');
+    end
     % Update smoothing parameters
     alpha_c_tilde = 1 /...
         (1 + (sum(smoothed_psd(i - 1,:)) / sum(psd_est(i,:)) - 1))^2;
@@ -117,7 +121,7 @@ for i = 2:size(psd_est, 1)
     end%if
     speech_snr_est(i, :) =...
         alpha_s .* (speech_psd_est ./ noise_psd_est) +...
-        (1 - alpha_s) .* max([smoothed_psd(i, :) ./ noise_psd_est - 1, 0]);
+        (1 - alpha_s) .* max([smoothed_psd(i, :) ./ noise_psd_est - 1, 0.2]);
     speech_psd_est = speech_snr_est(i, :) .* noise_psd_est;
 end%for
 
@@ -144,7 +148,7 @@ for i = 1:num_windows
         recovered_windowed_audio(i, :)';
 end
 
-% fprintf('Playing recovered audio\n');
+fprintf('Playing recovered audio\n');
 soundsc(recovered_audio, fs);
 error = sum((speech(1:recovered_length) - recovered_audio).^2);
 fprintf('Sum of squared errors: %.4f\n', error);
