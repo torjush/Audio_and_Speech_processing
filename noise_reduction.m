@@ -16,6 +16,7 @@ audio = speech + noise;
 fprintf('Now playing noisy audio\n');
 soundsc(audio, fs);
 pause(floor(length(audio) / fs) + 1);
+
 % Declare parameters
 window_length_sec = 20e-3; %20ms
 window_length = window_length_sec * fs;
@@ -76,9 +77,7 @@ psd_bar = (1 - beta) .* smoothed_psd(1, :);
 psd_bar_sq = (1 - beta) .* smoothed_psd(1, :).^2;
 psd_var_est = psd_bar_sq - psd_bar.^2;
 for i = 2:size(psd_est, 1)
-    if i == 203
-        disp('Hey');
-    end
+    
     % Update smoothing parameters
     alpha_c_tilde = 1 /...
         (1 + (sum(smoothed_psd(i - 1,:)) / sum(psd_est(i,:)) - 1))^2;
@@ -124,6 +123,7 @@ for i = 2:size(psd_est, 1)
         alpha_s .* (speech_psd_est ./ noise_psd_est) +...
         (1 - alpha_s) .* max([smoothed_psd(i, :) ./ noise_psd_est - 1, 0.2]);
     speech_psd_est = speech_snr_est(i, :) .* noise_psd_est;
+    
 end%for
 
 if sum(sum(isinf(speech_snr_est))) > 0
